@@ -3,33 +3,34 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>🌕 Mesečina Racer</title>
+<title>🚀 Tunnel Shooter</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
   body {
-    background: #0a0e1a;
+    background: #0a0a14;
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
     font-family: 'Segoe UI', Arial, sans-serif;
     touch-action: none;
+    overflow: hidden;
   }
   #gameWrap {
-    background: #141c2a;
-    border-radius: 20px;
+    background: #111122;
+    border-radius: 24px;
     padding: 12px;
-    box-shadow: 0 0 40px rgba(0,200,255,0.15);
+    box-shadow: 0 0 60px rgba(0,150,255,0.15), inset 0 0 30px rgba(0,100,255,0.05);
+    border: 1px solid #2a3a6a;
   }
   canvas {
     display: block;
     width: 100%;
-    max-width: 500px;
+    max-width: 420px;
     height: auto;
-    aspect-ratio: 400 / 600;
-    background: #0b111e;
-    border-radius: 12px;
-    border: 2px solid #2a3a5a;
+    aspect-ratio: 400 / 700;
+    background: #0b0e1a;
+    border-radius: 16px;
     touch-action: none;
     cursor: pointer;
   }
@@ -37,36 +38,37 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 8px 4px 8px;
-    color: #aac8ff;
+    padding: 10px 10px 4px 10px;
+    color: #8ab4f8;
     font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.5px;
   }
   #ui span { color: #f5d742; }
   .btn-reset {
-    background: #2a3a5a;
-    border: none;
-    color: #fff;
-    padding: 4px 14px;
+    background: #1a2a4a;
+    border: 1px solid #3a5a8a;
+    color: #aac8ff;
+    padding: 4px 16px;
     border-radius: 30px;
     font-size: 13px;
     cursor: pointer;
     transition: 0.2s;
   }
-  .btn-reset:hover { background: #3a5a8a; }
+  .btn-reset:hover { background: #2a4a7a; }
   .controls {
     display: flex;
     justify-content: center;
-    gap: 12px;
+    gap: 16px;
     padding: 6px 0 2px 0;
-    color: #6a8aaa;
+    color: #4a6a8a;
     font-size: 11px;
+    flex-wrap: wrap;
   }
-  @media (max-width: 520px) {
+  @media (max-width: 440px) {
     #gameWrap { padding: 6px; }
     #ui { font-size: 12px; }
-    .controls { font-size: 10px; gap: 8px; flex-wrap: wrap; }
+    .controls { font-size: 10px; gap: 8px; }
   }
 </style>
 </head>
@@ -74,334 +76,182 @@
 
 <div id="gameWrap">
   <div id="ui">
-    <div>🌕 SCORE <span id="scoreDisplay">0</span></div>
-    <div>💥 AMMO <span id="ammoDisplay">20</span></div>
+    <div>🚀 SCORE <span id="scoreDisplay">0</span></div>
     <div>❤️ <span id="livesDisplay">3</span></div>
     <button class="btn-reset" id="resetBtn">↻</button>
   </div>
-  <canvas id="gameCanvas" width="400" height="600"></canvas>
+  <canvas id="gameCanvas" width="400" height="700"></canvas>
   <div class="controls">
-    <span>← → вози</span>
-    <span>↑ скок</span>
-    <span>␣ пука</span>
-    <span>👆 допир за скок/пука</span>
+    <span>← → движи</span>
+    <span>🖱️ клик = пука</span>
+    <span>👆 допир = пука</span>
   </div>
 </div>
 
 <script>
 // ──────────────────────────────────────────────────────────────
-//  MESEČINA RACER — целосна игра во еден фајл
+//  TUNNEL SHOOTER — вселенски шутер со тунел ефект
 // ──────────────────────────────────────────────────────────────
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const W = 400, H = 600;
+const W = 400, H = 700;
 
-// ─── UI елементи ──────────────────────────────────────────────
 const scoreSpan = document.getElementById('scoreDisplay');
-const ammoSpan  = document.getElementById('ammoDisplay');
 const livesSpan = document.getElementById('livesDisplay');
 
 // ─── Играчки променливи ────────────────────────────────────────
 let gameOver = false;
 let score = 0;
 let lives = 3;
-let ammo = 20;
-const MAX_AMMO = 30;
+let level = 1;
+let frame = 0;
 
-// ─── Возило ────────────────────────────────────────────────────
+// ─── Играч (брод) ─────────────────────────────────────────────
 const player = {
-  x: 180, y: 480,
-  w: 34, h: 20,
-  speed: 4.5,
+  x: 180, y: 580,
+  w: 40, h: 32,
+  speed: 5,
   vx: 0,
-  vy: 0,
-  onGround: true,
-  jumping: false,
-  jumpPower: -8,
-  gravity: 0.35,
-  color: '#7fc9ff',
+  // Изглед на брод (повеќе детали во draw)
 };
 
-// ─── Списоци за објекти ──────────────────────────────────────
-let asteroids = [];
+// ─── Тунел параметри ───────────────────────────────────────────
+let tunnelOffset = 0;
+const tunnelSpeed = 0.8;
+
+// ─── Списоци ──────────────────────────────────────────────────
 let bullets = [];
-let enemies = [];      // НЛО
+let enemies = [];
 let enemyBullets = [];
-let craters = [];
-let ammoPacks = [];
+let stars = [];
+
+// ─── Иницијализација на ѕвезди (позадина) ────────────────────
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 120; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 2 + 0.5,
+      speed: Math.random() * 1.5 + 0.3,
+      brightness: Math.random() * 0.6 + 0.4,
+    });
+  }
+}
+initStars();
 
 // ─── Контроли ──────────────────────────────────────────────────
-const keys = { left: false, right: false, up: false, space: false };
-
-// ─── Тајмери ────────────────────────────────────────────────────
-let frame = 0;
-let enemySpawnTimer = 0;
-let asteroidSpawnTimer = 0;
-let ammoSpawnTimer = 0;
-let craterSpawnTimer = 0;
+const keys = { left: false, right: false };
 
 // ─── Иницијализација ──────────────────────────────────────────
 function initGame() {
   gameOver = false;
   score = 0;
   lives = 3;
-  ammo = 20;
+  level = 1;
+  frame = 0;
   player.x = 180;
-  player.y = 480;
   player.vx = 0;
-  player.vy = 0;
-  player.onGround = true;
-  player.jumping = false;
-  asteroids = [];
   bullets = [];
   enemies = [];
   enemyBullets = [];
-  craters = [];
-  ammoPacks = [];
-  frame = 0;
-  enemySpawnTimer = 0;
-  asteroidSpawnTimer = 0;
-  ammoSpawnTimer = 0;
-  craterSpawnTimer = 0;
+  initStars();
   updateUI();
 }
 
-// ─── UI ажурирање ──────────────────────────────────────────────
 function updateUI() {
   scoreSpan.textContent = score;
-  ammoSpan.textContent = ammo;
   livesSpan.textContent = lives;
 }
 
 // ─── Помошни функции ──────────────────────────────────────────
 function rand(min, max) { return Math.random() * (max - min) + min; }
-
 function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
 
-function distance(x1,y1,x2,y2) {
-  return Math.hypot(x2-x1, y2-y1);
-}
+function distance(x1,y1,x2,y2) { return Math.hypot(x2-x1, y2-y1); }
 
 function rectCollide(r1, r2) {
   return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x &&
          r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
 }
 
-// ─── Спаунинг ──────────────────────────────────────────────────
-function spawnAsteroid() {
-  const size = rand(12, 28);
-  asteroids.push({
-    x: rand(20, W - 20),
-    y: -size,
-    w: size,
-    h: size,
-    speed: rand(0.8, 2.2),
-    hp: 1,
-    color: `hsl(${randInt(30,60)}, 60%, ${randInt(40,70)}%)`,
-  });
-}
-
-function spawnCrater() {
-  const w = rand(28, 48);
-  const h = rand(10, 16);
-  craters.push({
-    x: rand(20, W - 20 - w),
-    y: -h,
-    w: w,
-    h: h,
-    speed: rand(0.6, 1.4),
-  });
-}
-
-function spawnAmmoPack() {
-  ammoPacks.push({
-    x: rand(30, W - 30),
-    y: -16,
-    w: 16,
-    h: 16,
-    speed: rand(0.6, 1.6),
-  });
-}
-
+// ─── Спаунинг на непријатели ──────────────────────────────────
 function spawnEnemy() {
-  const size = 24;
+  const size = rand(20, 34);
+  const type = Math.random() < 0.3 ? 'tank' : 'normal';
   enemies.push({
     x: rand(20, W - 20 - size),
     y: -size,
     w: size,
     h: size,
-    speed: rand(0.5, 1.2),
-    hp: 2,
+    speed: rand(0.6, 1.2 + level * 0.08),
+    hp: type === 'tank' ? 3 : 1,
+    type: type,
+    color: type === 'tank' ? '#ff6b4a' : '#ff4a8a',
     shootTimer: 0,
-    shootInterval: randInt(60, 160),
-    color: '#8f6bff',
+    shootInterval: randInt(60, 150) - level * 2,
   });
 }
 
-// ─── Пукање ────────────────────────────────────────────────────
+// ─── Пукање на играчот ─────────────────────────────────────────
 function shootBullet() {
-  if (ammo <= 0) return;
-  ammo--;
   bullets.push({
     x: player.x + player.w/2 - 3,
-    y: player.y - 6,
+    y: player.y - 8,
     w: 6,
-    h: 14,
-    speed: 7,
+    h: 18,
+    speed: 8,
     damage: 1,
   });
-  updateUI();
+  // Мал ефект на пукање (за подоцна)
 }
 
-function enemyShoot(enemy) {
-  enemyBullets.push({
-    x: enemy.x + enemy.w/2 - 4,
-    y: enemy.y + enemy.h,
-    w: 8,
-    h: 12,
-    speed: 2.5,
-    damage: 1,
-  });
-}
-
-// ─── Ажурирање на играта ──────────────────────────────────────
+// ─── Ажурирање ──────────────────────────────────────────────────
 function update() {
   if (gameOver) return;
   frame++;
+  tunnelOffset = (tunnelOffset + tunnelSpeed) % 100;
 
-  // ── Возило ─────────────────────────────────────────────────
-  let move = 0;
-  if (keys.left) move = -player.speed;
-  if (keys.right) move = player.speed;
-  player.vx = move;
+  // ── Движење на играчот ──────────────────────────────────────
+  if (keys.left) player.vx = -player.speed;
+  else if (keys.right) player.vx = player.speed;
+  else player.vx *= 0.85;
   player.x += player.vx;
-  if (player.x < 4) player.x = 4;
-  if (player.x + player.w > W - 4) player.x = W - 4 - player.w;
+  if (player.x < 5) player.x = 5;
+  if (player.x + player.w > W - 5) player.x = W - 5 - player.w;
 
-  // Скокање
-  if (keys.up && player.onGround && !player.jumping) {
-    player.vy = player.jumpPower;
-    player.onGround = false;
-    player.jumping = true;
-  }
-  player.vy += player.gravity;
-  player.y += player.vy;
-  if (player.y + player.h >= 560) {
-    player.y = 560 - player.h;
-    player.vy = 0;
-    player.onGround = true;
-    player.jumping = false;
-  }
+  // ── Автоматско пукање (секој 12-ти кадар) ──────────────────
+  if (frame % 12 === 0) shootBullet();
 
-  // ── Пукање ─────────────────────────────────────────────────
-  if (keys.space) {
-    // Пука само ако е притиснато, но со ограничување (spam control)
-    if (frame % 6 === 0) shootBullet();
-  }
-
-  // ── Астероиди ──────────────────────────────────────────────
-  asteroidSpawnTimer--;
-  if (asteroidSpawnTimer <= 0) {
-    spawnAsteroid();
-    asteroidSpawnTimer = randInt(15, 40);
-  }
-  for (let i = asteroids.length - 1; i >= 0; i--) {
-    const a = asteroids[i];
-    a.y += a.speed;
-    if (a.y > H + 20) { asteroids.splice(i, 1); continue; }
-    // Судир со возило
-    if (rectCollide(player, a)) {
-      lives--;
-      updateUI();
-      asteroids.splice(i, 1);
-      if (lives <= 0) { gameOver = true; }
-      continue;
-    }
-    // Судир со куршуми
-    for (let j = bullets.length - 1; j >= 0; j--) {
-      const b = bullets[j];
-      if (rectCollide(b, a)) {
-        bullets.splice(j, 1);
-        a.hp--;
-        if (a.hp <= 0) {
-          score += 10;
-          asteroids.splice(i, 1);
-          updateUI();
-        }
-        break;
-      }
-    }
-  }
-
-  // ── Куршуми ─────────────────────────────────────────────────
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    const b = bullets[i];
-    b.y -= b.speed;
-    if (b.y < -10) { bullets.splice(i, 1); }
-  }
-
-  // ── Кратери ─────────────────────────────────────────────────
-  craterSpawnTimer--;
-  if (craterSpawnTimer <= 0) {
-    spawnCrater();
-    craterSpawnTimer = randInt(30, 70);
-  }
-  for (let i = craters.length - 1; i >= 0; i--) {
-    const c = craters[i];
-    c.y += c.speed;
-    if (c.y > H + 20) { craters.splice(i, 1); continue; }
-    // Судир со возило – само ако возилото е на земја и не скока
-    if (player.onGround && player.y + player.h >= 555) {
-      if (rectCollide(player, c)) {
-        lives--;
-        updateUI();
-        craters.splice(i, 1);
-        if (lives <= 0) { gameOver = true; }
-        continue;
-      }
-    }
-  }
-
-  // ── Муниција ─────────────────────────────────────────────────
-  ammoSpawnTimer--;
-  if (ammoSpawnTimer <= 0 && ammo < MAX_AMMO) {
-    spawnAmmoPack();
-    ammoSpawnTimer = randInt(60, 140);
-  }
-  for (let i = ammoPacks.length - 1; i >= 0; i--) {
-    const p = ammoPacks[i];
-    p.y += p.speed;
-    if (p.y > H + 20) { ammoPacks.splice(i, 1); continue; }
-    if (rectCollide(player, p)) {
-      ammo = Math.min(ammo + 5, MAX_AMMO);
-      updateUI();
-      ammoPacks.splice(i, 1);
-    }
-  }
-
-  // ── НЛО непријатели ─────────────────────────────────────────
-  enemySpawnTimer--;
-  if (enemySpawnTimer <= 0) {
+  // ── Спаунинг непријатели ────────────────────────────────────
+  if (frame % Math.max(20, 60 - level * 2) === 0) {
     spawnEnemy();
-    enemySpawnTimer = randInt(80, 180);
   }
+
+  // ── Ажурирање на непријатели ────────────────────────────────
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
     e.y += e.speed;
     e.shootTimer++;
-    // Пукање
-    if (e.shootTimer >= e.shootInterval && e.y > 20 && e.y < 400) {
-      enemyShoot(e);
+    // Пукање (само ако е доволно блиску)
+    if (e.shootTimer >= e.shootInterval && e.y > 30 && e.y < 500) {
+      enemyBullets.push({
+        x: e.x + e.w/2 - 4,
+        y: e.y + e.h,
+        w: 8,
+        h: 14,
+        speed: 2.5 + level * 0.1,
+      });
       e.shootTimer = 0;
     }
     if (e.y > H + 30) { enemies.splice(i, 1); continue; }
-    // Судир со возило
+    // Судир со играч
     if (rectCollide(player, e)) {
       lives--;
       updateUI();
       enemies.splice(i, 1);
-      if (lives <= 0) { gameOver = true; }
+      if (lives <= 0) gameOver = true;
       continue;
     }
     // Судир со куршуми
@@ -411,16 +261,24 @@ function update() {
         bullets.splice(j, 1);
         e.hp--;
         if (e.hp <= 0) {
-          score += 25;
+          score += e.type === 'tank' ? 30 : 15;
           enemies.splice(i, 1);
           updateUI();
+          // Зголеми ниво на секои 100 поени
+          if (score > 0 && score % 100 < 15) level = Math.min(10, Math.floor(score / 100) + 1);
         }
         break;
       }
     }
   }
 
-  // ── Непријателски куршуми ──────────────────────────────────
+  // ── Куршуми на играчот ──────────────────────────────────────
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    bullets[i].y -= bullets[i].speed;
+    if (bullets[i].y < -10) bullets.splice(i, 1);
+  }
+
+  // ── Непријателски куршуми ────────────────────────────────────
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     const eb = enemyBullets[i];
     eb.y += eb.speed;
@@ -429,171 +287,152 @@ function update() {
       lives--;
       updateUI();
       enemyBullets.splice(i, 1);
-      if (lives <= 0) { gameOver = true; }
+      if (lives <= 0) gameOver = true;
     }
   }
 
-  // ── Автоматско пукање на допир (за телефон) ──────────────
-  // (работи преку event listener)
+  // ── Ажурирање на ѕвезди (позадина) ──────────────────────────
+  for (const star of stars) {
+    star.y += star.speed;
+    if (star.y > H) { star.y = 0; star.x = Math.random() * W; }
+  }
+
+  // ── Зголемување на нивото ────────────────────────────────────
+  // (веќе се зголемува преку score)
 }
 
 // ─── ЦРТАЊЕ ──────────────────────────────────────────────────
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
-  // ── Подлога (месечина) ─────────────────────────────────────
-  const grad = ctx.createRadialGradient(200, 500, 40, 200, 500, 300);
-  grad.addColorStop(0, '#2a3a5a');
-  grad.addColorStop(0.7, '#1a2a3a');
-  grad.addColorStop(1, '#0a121e');
+  // ── Позадина: градиент ──────────────────────────────────────
+  const grad = ctx.createRadialGradient(200, 350, 50, 200, 350, 350);
+  grad.addColorStop(0, '#1a1a3a');
+  grad.addColorStop(0.5, '#0f0f24');
+  grad.addColorStop(1, '#050510');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
-  // Ѕвезди
-  ctx.fillStyle = 'rgba(255,255,240,0.6)';
-  for (let i=0; i<50; i++) {
-    const sx = (i*23 + 17) % W, sy = (i*41 + 33) % (H*0.6);
-    ctx.beginPath();
-    ctx.arc(sx, sy, (i%3+1)*0.5, 0, Math.PI*2);
-    ctx.fill();
-  }
 
-  // ── Кратери ─────────────────────────────────────────────────
-  for (const c of craters) {
-    ctx.fillStyle = '#1a1a2e';
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.ellipse(c.x + c.w/2, c.y + c.h/2, c.w/2, c.h/2, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#2a3a4a';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-
-  // ── Астероиди ───────────────────────────────────────────────
-  for (const a of asteroids) {
-    ctx.fillStyle = a.color;
-    ctx.shadowColor = 'rgba(200,150,80,0.3)';
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.ellipse(a.x + a.w/2, a.y + a.h/2, a.w/2, a.h/2, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#443322';
+  // ── ТУНЕЛ ЕФЕКТ (кругови кои се движат кон играчот) ──────
+  for (let i = 0; i < 12; i++) {
+    const radius = 40 + i * 28;
+    const alpha = 0.06 + (i / 12) * 0.08;
+    const offset = (tunnelOffset + i * 8) % 100;
+    const yOffset = offset * 2 - 100;
+    ctx.strokeStyle = `rgba(60, 140, 255, ${alpha})`;
     ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(200, 300 + yOffset * 0.6, radius * (1 + offset * 0.003), radius * 0.5 * (1 + offset * 0.003), 0, 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  // ── Муниција ─────────────────────────────────────────────────
-  for (const p of ammoPacks) {
-    ctx.fillStyle = '#f5d742';
-    ctx.shadowColor = 'rgba(245,215,66,0.5)';
-    ctx.shadowBlur = 12;
-    ctx.fillRect(p.x, p.y, p.w, p.h);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#0a0e1a';
-    ctx.font = '10px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('⚡', p.x + p.w/2, p.y + p.h - 2);
-  }
-
-  // ── НЛО ──────────────────────────────────────────────────────
-  for (const e of enemies) {
-    ctx.fillStyle = e.color;
-    ctx.shadowColor = 'rgba(143,107,255,0.5)';
-    ctx.shadowBlur = 14;
-    // летечко тело
+  // ── Ѕвезди ──────────────────────────────────────────────────
+  for (const star of stars) {
+    ctx.globalAlpha = star.brightness;
+    ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.h/2, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    // купола
-    ctx.fillStyle = '#b08aff';
-    ctx.beginPath();
-    ctx.arc(e.x + e.w/2, e.y + e.h/3, e.w/4, 0, Math.PI*2);
-    ctx.fill();
-    // светла
-    ctx.fillStyle = '#ff4a4a';
-    ctx.beginPath();
-    ctx.arc(e.x + 4, e.y + 6, 2, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = '#4aff4a';
-    ctx.beginPath();
-    ctx.arc(e.x + e.w - 4, e.y + 6, 2, 0, Math.PI*2);
+    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
 
   // ── Непријателски куршуми ──────────────────────────────────
   for (const eb of enemyBullets) {
-    ctx.fillStyle = '#ff6b6b';
     ctx.shadowColor = 'rgba(255,80,80,0.6)';
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#ff4a4a';
     ctx.fillRect(eb.x, eb.y, eb.w, eb.h);
     ctx.shadowBlur = 0;
   }
 
   // ── Куршуми на играчот ──────────────────────────────────────
   for (const b of bullets) {
+    ctx.shadowColor = 'rgba(100,200,255,0.8)';
+    ctx.shadowBlur = 14;
     ctx.fillStyle = '#7fc9ff';
-    ctx.shadowColor = 'rgba(127,201,255,0.6)';
-    ctx.shadowBlur = 8;
     ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.shadowBlur = 0;
+    // траг
+    ctx.fillStyle = 'rgba(127,201,255,0.2)';
+    ctx.fillRect(b.x + 1, b.y + b.h, 4, 10);
   }
 
-  // ── Возило ──────────────────────────────────────────────────
+  // ── Непријатели ──────────────────────────────────────────────
+  for (const e of enemies) {
+    ctx.shadowColor = `rgba(255,80,80,0.4)`;
+    ctx.shadowBlur = 16;
+    // тело
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.h/2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // очи/светла
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(e.x + e.w * 0.25, e.y + e.h * 0.3, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(e.x + e.w * 0.75, e.y + e.h * 0.3, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // HP индикатор за тенкови
+    if (e.type === 'tank') {
+      ctx.fillStyle = '#ff6b4a';
+      ctx.fillRect(e.x + 4, e.y - 6, (e.w - 8) * (e.hp / 3), 4);
+      ctx.fillStyle = '#4aff4a';
+      ctx.fillRect(e.x + 4, e.y - 6, (e.w - 8) * (e.hp / 3), 4);
+    }
+  }
+
+  // ── Играч (брод/авион) ──────────────────────────────────────
   const px = player.x, py = player.y;
   // сенка
-  ctx.shadowColor = 'rgba(0,200,255,0.2)';
-  ctx.shadowBlur = 18;
-  // тело
-  ctx.fillStyle = player.color;
+  ctx.shadowColor = 'rgba(0,200,255,0.25)';
+  ctx.shadowBlur = 30;
+  // тело на бродот
+  ctx.fillStyle = '#4a9aff';
   ctx.beginPath();
-  ctx.roundRect(px, py, player.w, player.h, 4);
+  ctx.moveTo(px + player.w/2, py - 4);
+  ctx.lineTo(px + player.w - 6, py + player.h - 6);
+  ctx.lineTo(px + 6, py + player.h - 6);
+  ctx.closePath();
   ctx.fill();
   // кабина
-  ctx.fillStyle = '#3a9aff';
+  ctx.fillStyle = '#7fc9ff';
   ctx.beginPath();
-  ctx.roundRect(px + 8, py - 4, 18, 10, 3);
+  ctx.arc(px + player.w/2, py + 4, 10, 0, Math.PI * 2);
   ctx.fill();
-  // фарови
-  ctx.fillStyle = '#ffdd77';
-  ctx.shadowBlur = 6;
+  // крилја
+  ctx.fillStyle = '#3a7acc';
+  ctx.fillRect(px - 6, py + 10, 6, 10);
+  ctx.fillRect(px + player.w, py + 10, 6, 10);
+  // мотор (светло)
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = 'rgba(100,200,255,0.8)';
+  ctx.fillStyle = '#7fc9ff';
   ctx.beginPath();
-  ctx.arc(px + 4, py + 4, 3, 0, Math.PI*2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(px + player.w - 4, py + 4, 3, 0, Math.PI*2);
+  ctx.arc(px + player.w/2, py + player.h - 2, 6, 0, Math.PI * 2);
   ctx.fill();
   ctx.shadowBlur = 0;
 
+  // ── UI info на екранот ──────────────────────────────────────
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`LVL ${level}`, 10, 22);
+
   // ── Game Over ────────────────────────────────────────────────
   if (gameOver) {
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(0, 200, W, 120);
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 280, W, 100);
     ctx.fillStyle = '#ff6b6b';
-    ctx.font = 'bold 36px Arial';
+    ctx.font = 'bold 34px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('💥 GAME OVER', W/2, 260);
+    ctx.fillText('💥 GAME OVER', W/2, 335);
     ctx.fillStyle = '#aac8ff';
-    ctx.font = '18px Arial';
-    ctx.fillText('Tap/Click to restart', W/2, 300);
+    ctx.font = '16px Arial';
+    ctx.fillText('Tap/Click to restart', W/2, 365);
   }
-}
-
-// ─── roundRect полифил за стари прелистувачи ─────────────────
-if (!CanvasRenderingContext2D.prototype.roundRect) {
-  CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r) {
-    if (r > w/2) r = w/2;
-    if (r > h/2) r = h/2;
-    this.moveTo(x+r, y);
-    this.arcTo(x+w, y, x+w, y+h, r);
-    this.arcTo(x+w, y+h, x, y+h, r);
-    this.arcTo(x, y+h, x, y, r);
-    this.arcTo(x, y, x+w, y, r);
-    return this;
-  };
 }
 
 // ─── ГЛАВНА ЛУПА ──────────────────────────────────────────────
@@ -604,50 +443,37 @@ function gameLoop() {
 }
 
 // ─── РЕСТАРТ ──────────────────────────────────────────────────
-function restart() {
-  initGame();
-}
+function restart() { initGame(); }
 
-// ─── КОНТРОЛИ (тастатура) ────────────────────────────────────
+// ─── КОНТРОЛИ ──────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
-  const key = e.key;
-  if (key === 'ArrowLeft')  { keys.left = true; e.preventDefault(); }
-  if (key === 'ArrowRight') { keys.right = true; e.preventDefault(); }
-  if (key === 'ArrowUp')    { keys.up = true; e.preventDefault(); }
-  if (key === ' ' || key === 'Space') { keys.space = true; e.preventDefault(); }
-  if (key === 'r' || key === 'R') { restart(); }
+  if (e.key === 'ArrowLeft') { keys.left = true; e.preventDefault(); }
+  if (e.key === 'ArrowRight') { keys.right = true; e.preventDefault(); }
+  if (e.key === 'r' || e.key === 'R') restart();
 });
 document.addEventListener('keyup', (e) => {
-  const key = e.key;
-  if (key === 'ArrowLeft')  { keys.left = false; e.preventDefault(); }
-  if (key === 'ArrowRight') { keys.right = false; e.preventDefault(); }
-  if (key === 'ArrowUp')    { keys.up = false; e.preventDefault(); }
-  if (key === ' ' || key === 'Space') { keys.space = false; e.preventDefault(); }
+  if (e.key === 'ArrowLeft') { keys.left = false; e.preventDefault(); }
+  if (e.key === 'ArrowRight') { keys.right = false; e.preventDefault(); }
 });
 
-// ─── КОНТРОЛИ (допир за телефон) ─────────────────────────────
+// ─── Допир / клик за пукање ──────────────────────────────────
+canvas.addEventListener('click', (e) => {
+  if (gameOver) { restart(); return; }
+  // пукање при клик (и така автоматски пука, но ова е дополнително)
+});
+
+// ─── Допир контроли за телефон ──────────────────────────────
 let touchX = null;
-let touchActive = false;
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
+  if (gameOver) { restart(); return; }
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const touch = e.touches[0];
   const canvasX = (touch.clientX - rect.left) * scaleX;
-  const canvasY = (touch.clientY - rect.top) * scaleX;
   touchX = canvasX;
-  touchActive = true;
-
-  // Лева половина = пукање, десна половина = скок
-  if (canvasX < W/2) {
-    keys.space = true;
-  } else {
-    if (player.onGround && !player.jumping) {
-      player.vy = player.jumpPower;
-      player.onGround = false;
-      player.jumping = true;
-    }
-  }
+  if (canvasX < player.x) keys.left = true, keys.right = false;
+  else if (canvasX > player.x + player.w) keys.left = false, keys.right = true;
 });
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
@@ -655,27 +481,16 @@ canvas.addEventListener('touchmove', (e) => {
   const scaleX = canvas.width / rect.width;
   const touch = e.touches[0];
   const canvasX = (touch.clientX - rect.left) * scaleX;
-  // Возило следи допир (лево-десно)
-  if (canvasX < player.x) keys.left = true, keys.right = false;
-  else if (canvasX > player.x + player.w) keys.left = false, keys.right = true;
+  if (canvasX < player.x + 5) keys.left = true, keys.right = false;
+  else if (canvasX > player.x + player.w - 5) keys.left = false, keys.right = true;
+  else keys.left = false, keys.right = false;
 });
 canvas.addEventListener('touchend', (e) => {
   e.preventDefault();
-  touchActive = false;
-  keys.left = false;
-  keys.right = false;
-  keys.space = false;
+  keys.left = false; keys.right = false;
 });
 canvas.addEventListener('touchcancel', (e) => {
-  touchActive = false;
-  keys.left = false;
-  keys.right = false;
-  keys.space = false;
-});
-
-// ─── Клик за рестарт ──────────────────────────────────────────
-canvas.addEventListener('click', (e) => {
-  if (gameOver) restart();
+  keys.left = false; keys.right = false;
 });
 
 // ─── Ресет копче ──────────────────────────────────────────────
