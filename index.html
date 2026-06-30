@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>🚀 Tunnel Shooter — Нивоа</title>
+<title>🚀 Tunnel Shooter</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0a14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
 <style>
   * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
   body {
@@ -84,19 +91,138 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════
-//  TUNNEL SHOOTER — 10 нивоа, босови, power-ups
+//  ЗВУЧЕН СИСТЕМ (Web Audio API) – без надворешни фајлови
+// ═══════════════════════════════════════════════════════════════
+class SoundSystem {
+  constructor() {
+    this.ctx = null;
+    this.enabled = true;
+    this.musicPlaying = false;
+    this.musicInterval = null;
+    this.musicNodes = [];
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) { this.enabled = false; }
+  }
+
+  // Вклучи аудио контекст (мора да се повика по корисничка интеракција)
+  resume() {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+    if (!this.musicPlaying) this.startMusic();
+  }
+
+  // ─── Генерирај тон ──────────────────────────────────────────
+  playTone(freq, duration, type = 'square', volume = 0.15) {
+    if (!this.enabled || !this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      gain.gain.value = volume;
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start();
+      osc.stop(this.ctx.currentTime + duration);
+    } catch(e) {}
+  }
+
+  // ─── Пукање ──────────────────────────────────────────────────
+  shoot() {
+    this.playTone(800 + Math.random() * 200, 0.06, 'square', 0.08);
+    this.playTone(400, 0.04, 'sawtooth', 0.05);
+  }
+
+  // ─── Експлозија ──────────────────────────────────────────────
+  explosion() {
+    for (let i = 0; i < 8; i++) {
+      setTimeout(() => {
+        this.playTone(100 + Math.random() * 300, 0.08 + Math.random() * 0.1, 'sawtooth', 0.06);
+      }, i * 30);
+    }
+    // низок бум
+    this.playTone(60, 0.3, 'sawtooth', 0.12);
+  }
+
+  // ─── Power-up ──────────────────────────────────────────────────
+  powerup() {
+    this.playTone(600, 0.08, 'square', 0.1);
+    setTimeout(() => this.playTone(900, 0.08, 'square', 0.1), 80);
+    setTimeout(() => this.playTone(1200, 0.12, 'square', 0.1), 160);
+  }
+
+  // ─── Штит ────────────────────────────────────────────────────
+  shield() {
+    this.playTone(500, 0.15, 'sine', 0.08);
+    setTimeout(() => this.playTone(700, 0.15, 'sine', 0.08), 100);
+  }
+
+  // ─── Game Over ──────────────────────────────────────────────
+  gameOver() {
+    this.playTone(400, 0.3, 'sawtooth', 0.1);
+    setTimeout(() => this.playTone(300, 0.3, 'sawtooth', 0.1), 250);
+    setTimeout(() => this.playTone(200, 0.5, 'sawtooth', 0.1), 500);
+  }
+
+  // ─── Ниво завршено ──────────────────────────────────────────
+  levelComplete() {
+    [523, 659, 784, 1047].forEach((f, i) => {
+      setTimeout(() => this.playTone(f, 0.12, 'square', 0.08), i * 120);
+    });
+  }
+
+  // ─── Позадинска музика (едноставна) ────────────────────────
+  startMusic() {
+    if (this.musicPlaying || !this.enabled) return;
+    this.musicPlaying = true;
+    const notes = [220, 247, 262, 294, 330, 370, 392, 440];
+    let i = 0;
+    this.musicInterval = setInterval(() => {
+      if (!this.musicPlaying) { clearInterval(this.musicInterval); return; }
+      const note = notes[i % notes.length];
+      this.playTone(note, 0.1, 'sine', 0.03);
+      i++;
+      if (i % 8 === 0) i += 2;
+    }, 220);
+  }
+
+  stopMusic() {
+    this.musicPlaying = false;
+    if (this.musicInterval) {
+      clearInterval(this.musicInterval);
+      this.musicInterval = null;
+    }
+  }
+}
+
+// ─── ИНИЦИЈАЛИЗАЦИЈА НА ЗВУК ──────────────────────────────────
+const sound = new SoundSystem();
+
+// ─── ПРВ КЛИК/ДОПИР – ВКЛУЧИ ЗВУК ──────────────────────────
+function enableAudio() {
+  sound.resume();
+  document.removeEventListener('click', enableAudio);
+  document.removeEventListener('touchstart', enableAudio);
+}
+document.addEventListener('click', enableAudio);
+document.addEventListener('touchstart', enableAudio);
+
+// ═══════════════════════════════════════════════════════════════
+//  ИГРА (исто како претходно, но со звук)
 // ═══════════════════════════════════════════════════════════════
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const W = 400, H = 700;
 
-// ─── UI ────────────────────────────────────────────────────────
 const scoreSpan = document.getElementById('scoreDisplay');
 const starsSpan = document.getElementById('starsDisplay');
 const livesSpan = document.getElementById('livesDisplay');
 
-// ─── ПОДАТОЦИ ЗА НИВОА ──────────────────────────────────────
+// ─── НИВОА ──────────────────────────────────────────────────────
 const LEVELS = [
   { name: '🌌 Вселена', bg: '#0b0e1a', tunnelColor: '60,140,255', enemySpeed: 0.7, spawnRate: 50, boss: false },
   { name: '🔥 Огнен тунел', bg: '#1a0a0a', tunnelColor: '255,100,50', enemySpeed: 0.9, spawnRate: 45, boss: false },
@@ -110,7 +236,6 @@ const LEVELS = [
   { name: '👾 БОС — Уништувач', bg: '#1a0000', tunnelColor: '255,0,0', enemySpeed: 2.2, spawnRate: 20, boss: true },
 ];
 
-// ─── Играчки променливи ──────────────────────────────────────
 let gameOver = false;
 let levelComplete = false;
 let score = 0;
@@ -124,7 +249,6 @@ let bossActive = false;
 let bossDefeated = false;
 let powerups = [];
 
-// ─── Играч ────────────────────────────────────────────────────
 const player = {
   x: 180, y: 580,
   w: 36, h: 30,
@@ -137,22 +261,17 @@ const player = {
   fireRate: 12,
 };
 
-// ─── Тунел ────────────────────────────────────────────────────
 let tunnelOffset = 0;
 const tunnelSpeed = 0.8;
-
-// ─── Списоци ──────────────────────────────────────────────────
 let bullets = [];
 let enemies = [];
 let enemyBullets = [];
 let boss = null;
 let stars = [];
 let explosions = [];
-
-// ─── Контроли ──────────────────────────────────────────────────
 const keys = { left: false, right: false };
 
-// ─── Иницијализација ──────────────────────────────────────────
+// ─── ИНИЦИЈАЛИЗАЦИЈА ──────────────────────────────────────────
 function initStars() {
   stars = [];
   for (let i = 0; i < 100; i++) {
@@ -198,9 +317,11 @@ function initGame() {
   player.rapidFire = false;
   player.rapidFireTimer = 0;
   player.fireRate = 12;
+  sound.stopMusic();
   initStars();
   initLevel();
   updateUI();
+  sound.resume();
 }
 
 function updateUI() {
@@ -209,17 +330,17 @@ function updateUI() {
   livesSpan.textContent = lives;
 }
 
-// ─── Помошни функции ──────────────────────────────────────────
+// ─── ПОМОШНИ ──────────────────────────────────────────────────
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
-
 function rectCollide(r1, r2) {
   return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x &&
          r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
 }
 
-// ─── Експлозии ────────────────────────────────────────────────
+// ─── ЕКСПЛОЗИИ ──────────────────────────────────────────────────
 function addExplosion(x, y, color = '#ff8844') {
+  sound.explosion();
   for (let i = 0; i < 12; i++) {
     const angle = rand(0, Math.PI * 2);
     const speed = rand(1, 4);
@@ -235,7 +356,7 @@ function addExplosion(x, y, color = '#ff8844') {
   }
 }
 
-// ─── Спаунинг непријатели ──────────────────────────────────────
+// ─── СПАУНИНГ ──────────────────────────────────────────────────
 function spawnEnemy() {
   const lv = LEVELS[currentLevel];
   const size = rand(20, 32);
@@ -265,11 +386,9 @@ function spawnEnemy() {
     color: color,
     shootTimer: 0,
     shootInterval: randInt(60, 150) - currentLevel * 2,
-    shieldTimer: type === 'shield' ? 0 : 0,
   });
 }
 
-// ─── Спаунинг бос ──────────────────────────────────────────────
 function spawnBoss() {
   const size = 70;
   const hp = 20 + currentLevel * 5;
@@ -289,7 +408,6 @@ function spawnBoss() {
   bossActive = true;
 }
 
-// ─── Power-ups ──────────────────────────────────────────────────
 function spawnPowerup(x, y) {
   const type = ['shield', 'rapid', 'bomb'][randInt(0, 2)];
   powerups.push({
@@ -304,9 +422,9 @@ function spawnPowerup(x, y) {
   });
 }
 
-// ─── Пукање ────────────────────────────────────────────────────
 function shootBullet() {
   if (gameOver || levelComplete) return;
+  sound.shoot();
   bullets.push({
     x: player.x + player.w/2 - 3,
     y: player.y - 8,
@@ -317,13 +435,13 @@ function shootBullet() {
   });
 }
 
-// ─── Ажурирање ──────────────────────────────────────────────────
+// ─── АЖУРИРАЊЕ ──────────────────────────────────────────────────
 function update() {
   if (gameOver || levelComplete) return;
   frame++;
   tunnelOffset = (tunnelOffset + tunnelSpeed) % 100;
 
-  // ── Движење на играчот ──────────────────────────────────────
+  // Движење
   if (keys.left) player.vx = -player.speed;
   else if (keys.right) player.vx = player.speed;
   else player.vx *= 0.85;
@@ -331,37 +449,27 @@ function update() {
   if (player.x < 5) player.x = 5;
   if (player.x + player.w > W - 5) player.x = W - 5 - player.w;
 
-  // ── Power-ups тајмери ────────────────────────────────────────
-  if (player.shield) {
-    player.shieldTimer--;
-    if (player.shieldTimer <= 0) player.shield = false;
-  }
+  // Power-ups тајмери
+  if (player.shield) { player.shieldTimer--; if (player.shieldTimer <= 0) player.shield = false; }
   if (player.rapidFire) {
     player.rapidFireTimer--;
-    if (player.rapidFireTimer <= 0) {
-      player.rapidFire = false;
-      player.fireRate = 12;
-    }
+    if (player.rapidFireTimer <= 0) { player.rapidFire = false; player.fireRate = 12; }
   }
 
-  // ── Пукање ────────────────────────────────────────────────────
+  // Пукање
   const fireRate = player.rapidFire ? 6 : 12;
   if (frame % fireRate === 0) shootBullet();
 
-  // ── Спаунинг непријатели ────────────────────────────────────
   const lv = LEVELS[currentLevel];
   if (!bossActive && !lv.boss && enemies.length < 10) {
-    if (frame % Math.max(15, lv.spawnRate - currentLevel) === 0) {
-      spawnEnemy();
-    }
+    if (frame % Math.max(15, lv.spawnRate - currentLevel) === 0) spawnEnemy();
   }
 
-  // ── Спаунинг бос ────────────────────────────────────────────
   if (lv.boss && !bossActive && !bossDefeated && enemiesKilled >= enemiesForLevel) {
     spawnBoss();
   }
 
-  // ── Ажурирање на непријатели ────────────────────────────────
+  // ── Непријатели ──────────────────────────────────────────────
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
     e.y += e.speed;
@@ -378,16 +486,14 @@ function update() {
     }
     if (e.y > H + 30) { enemies.splice(i, 1); continue; }
     
-    // Судир со играч
     if (rectCollide(player, e) && !player.shield) {
       lives--;
       updateUI();
       addExplosion(e.x + e.w/2, e.y + e.h/2, e.color);
       enemies.splice(i, 1);
-      if (lives <= 0) gameOver = true;
+      if (lives <= 0) { gameOver = true; sound.gameOver(); sound.stopMusic(); }
       continue;
     }
-    // Судир со куршуми
     for (let j = bullets.length - 1; j >= 0; j--) {
       const b = bullets[j];
       if (rectCollide(b, e)) {
@@ -397,13 +503,12 @@ function update() {
           addExplosion(e.x + e.w/2, e.y + e.h/2, e.color);
           enemiesKilled++;
           score += e.type === 'tank' ? 30 : e.type === 'shield' ? 25 : 15;
-          // Power-up шанса
           if (Math.random() < 0.12) spawnPowerup(e.x + e.w/2, e.y + e.h/2);
           enemies.splice(i, 1);
           updateUI();
-          // Провери дали нивото е завршено
           if (enemiesKilled >= enemiesForLevel && !lv.boss) {
             levelComplete = true;
+            sound.levelComplete();
             totalStars += Math.min(3, Math.floor(score / 100) + 1);
             setTimeout(() => { nextLevel(); }, 1500);
           }
@@ -416,13 +521,11 @@ function update() {
   // ── Бос ──────────────────────────────────────────────────────
   if (bossActive && boss) {
     const b = boss;
-    // Движење на бос
     if (b.y < 60) b.y += b.speed;
     else {
       b.x += Math.sin(frame * 0.02) * 1.2;
       if (b.x < 10) b.x = 10;
       if (b.x + b.w > W - 10) b.x = W - 10 - b.w;
-      // Пукање
       b.shootTimer++;
       if (b.shootTimer >= b.shootInterval) {
         for (let k = 0; k < 3 + Math.floor(currentLevel / 3); k++) {
@@ -440,13 +543,11 @@ function update() {
         b.shootTimer = 0;
       }
     }
-    // Судир со играч
     if (rectCollide(player, b) && !player.shield) {
       lives--;
       updateUI();
-      if (lives <= 0) gameOver = true;
+      if (lives <= 0) { gameOver = true; sound.gameOver(); sound.stopMusic(); }
     }
-    // Судир со куршуми
     for (let j = bullets.length - 1; j >= 0; j--) {
       const bullet = bullets[j];
       if (rectCollide(bullet, b)) {
@@ -461,51 +562,47 @@ function update() {
           bossDefeated = true;
           bossActive = false;
           levelComplete = true;
+          sound.levelComplete();
           updateUI();
           setTimeout(() => { nextLevel(); }, 2000);
         }
       }
     }
-    // Бос куршуми со дополнително движење
     for (let k = enemyBullets.length - 1; k >= 0; k--) {
       const eb = enemyBullets[k];
       if (eb.vx) { eb.x += eb.vx; eb.y += eb.vy; }
     }
   }
 
-  // ── Куршуми на играчот ──────────────────────────────────────
+  // ── Куршуми ──────────────────────────────────────────────────
   for (let i = bullets.length - 1; i >= 0; i--) {
     bullets[i].y -= bullets[i].speed;
     if (bullets[i].y < -10) bullets.splice(i, 1);
   }
 
-  // ── Непријателски куршуми ────────────────────────────────────
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     const eb = enemyBullets[i];
     eb.y += eb.speed || 2.5;
     if (eb.x) eb.x += eb.vx || 0;
-    if (eb.y > H + 20 || eb.x < -20 || eb.x > W + 20) {
-      enemyBullets.splice(i, 1);
-      continue;
-    }
+    if (eb.y > H + 20 || eb.x < -20 || eb.x > W + 20) { enemyBullets.splice(i, 1); continue; }
     if (rectCollide(player, eb) && !player.shield) {
       lives--;
       updateUI();
       enemyBullets.splice(i, 1);
-      if (lives <= 0) gameOver = true;
+      if (lives <= 0) { gameOver = true; sound.gameOver(); sound.stopMusic(); }
     }
   }
 
-  // ── Power-ups ──────────────────────────────────────────────────
+  // ── Power-ups ────────────────────────────────────────────────
   for (let i = powerups.length - 1; i >= 0; i--) {
     const p = powerups[i];
     p.y += p.speed;
     if (p.y > H + 20) { powerups.splice(i, 1); continue; }
     if (rectCollide(player, p)) {
-      if (p.type === 'shield') { player.shield = true; player.shieldTimer = 180; }
+      sound.powerup();
+      if (p.type === 'shield') { player.shield = true; player.shieldTimer = 180; sound.shield(); }
       else if (p.type === 'rapid') { player.rapidFire = true; player.rapidFireTimer = 180; player.fireRate = 6; }
       else if (p.type === 'bomb') {
-        // Бомба – уништи ги сите непријатели
         for (const e of enemies) { addExplosion(e.x + e.w/2, e.y + e.h/2, e.color); score += 10; }
         enemies = [];
         if (boss) { boss.hp -= 10; addExplosion(boss.x + boss.w/2, boss.y + boss.h/2, '#ff8844'); }
@@ -524,19 +621,17 @@ function update() {
     if (e.life <= 0) explosions.splice(i, 1);
   }
 
-  // ── Ѕвезди ────────────────────────────────────────────────────
   for (const star of stars) {
     star.y += star.speed;
     if (star.y > H) { star.y = 0; star.x = Math.random() * W; }
   }
 }
 
-// ─── Следно ниво ──────────────────────────────────────────────
 function nextLevel() {
   currentLevel++;
   if (currentLevel >= LEVELS.length) {
-    // Победи ја играта!
     gameOver = true;
+    sound.levelComplete();
     return;
   }
   initLevel();
@@ -545,8 +640,6 @@ function nextLevel() {
 // ─── ЦРТАЊЕ ──────────────────────────────────────────────────
 function draw() {
   ctx.clearRect(0, 0, W, H);
-
-  // ── Позадина ──────────────────────────────────────────────────
   const lv = LEVELS[currentLevel];
   const grad = ctx.createRadialGradient(200, 350, 50, 200, 350, 350);
   grad.addColorStop(0, lv.bg);
@@ -554,7 +647,6 @@ function draw() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  // ── Тунел ────────────────────────────────────────────────────
   const [r, g, b] = lv.tunnelColor.split(',').map(Number);
   for (let i = 0; i < 12; i++) {
     const radius = 40 + i * 28;
@@ -568,7 +660,6 @@ function draw() {
     ctx.stroke();
   }
 
-  // ── Ѕвезди ──────────────────────────────────────────────────
   for (const star of stars) {
     ctx.globalAlpha = star.brightness;
     ctx.fillStyle = '#fff';
@@ -578,7 +669,6 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
-  // ── Експлозии ──────────────────────────────────────────────
   for (const e of explosions) {
     ctx.globalAlpha = e.life / e.maxLife;
     ctx.fillStyle = e.color;
@@ -588,7 +678,6 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
-  // ── Power-ups ──────────────────────────────────────────────────
   for (const p of powerups) {
     ctx.shadowColor = `rgba(255,255,255,0.3)`;
     ctx.shadowBlur = 10;
@@ -603,7 +692,6 @@ function draw() {
     ctx.fillText(p.symbol, p.x + p.w/2, p.y + p.h/2);
   }
 
-  // ── Непријатели ──────────────────────────────────────────────
   for (const e of enemies) {
     ctx.shadowColor = `rgba(255,80,80,0.3)`;
     ctx.shadowBlur = 12;
@@ -612,7 +700,6 @@ function draw() {
     ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w/2, e.h/2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
-    // Очи
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(e.x + e.w * 0.25, e.y + e.h * 0.3, 3, 0, Math.PI * 2);
@@ -620,7 +707,6 @@ function draw() {
     ctx.beginPath();
     ctx.arc(e.x + e.w * 0.75, e.y + e.h * 0.3, 3, 0, Math.PI * 2);
     ctx.fill();
-    // Штит (за shield тип)
     if (e.type === 'shield') {
       ctx.strokeStyle = 'rgba(74,138,255,0.5)';
       ctx.lineWidth = 2;
@@ -628,7 +714,6 @@ function draw() {
       ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2 + 4, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // HP
     if (e.hp > 1) {
       ctx.fillStyle = '#ff4444';
       ctx.fillRect(e.x + 4, e.y - 6, (e.w - 8) * (e.hp / e.maxHp), 4);
@@ -637,7 +722,6 @@ function draw() {
     }
   }
 
-  // ── Непријателски куршуми ──────────────────────────────────
   for (const eb of enemyBullets) {
     ctx.shadowColor = 'rgba(255,80,80,0.6)';
     ctx.shadowBlur = 12;
@@ -646,7 +730,6 @@ function draw() {
     ctx.shadowBlur = 0;
   }
 
-  // ── Куршуми на играчот ──────────────────────────────────────
   for (const b of bullets) {
     ctx.shadowColor = 'rgba(100,200,255,0.8)';
     ctx.shadowBlur = 14;
@@ -655,7 +738,6 @@ function draw() {
     ctx.shadowBlur = 0;
   }
 
-  // ── Бос ──────────────────────────────────────────────────────
   if (bossActive && boss) {
     const b = boss;
     ctx.shadowColor = 'rgba(255,200,100,0.4)';
@@ -665,7 +747,6 @@ function draw() {
     ctx.ellipse(b.x + b.w/2, b.y + b.h/2, b.w/2, b.h/2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
-    // Очи на бос
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(b.x + b.w * 0.25, b.y + b.h * 0.3, 8, 0, Math.PI * 2);
@@ -680,7 +761,6 @@ function draw() {
     ctx.beginPath();
     ctx.arc(b.x + b.w * 0.75, b.y + b.h * 0.3, 4, 0, Math.PI * 2);
     ctx.fill();
-    // HP на бос
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(50, 20, 300, 12);
     ctx.fillStyle = '#ff4444';
@@ -693,7 +773,6 @@ function draw() {
     ctx.fillText(`👾 BOSS ${Math.round((b.hp / b.maxHp) * 100)}%`, 200, 30);
   }
 
-  // ── Играч ────────────────────────────────────────────────────
   const px = player.x, py = player.y;
   ctx.shadowColor = 'rgba(0,200,255,0.25)';
   ctx.shadowBlur = 25;
@@ -712,7 +791,6 @@ function draw() {
   ctx.fillRect(px - 6, py + 10, 6, 10);
   ctx.fillRect(px + player.w, py + 10, 6, 10);
   ctx.shadowBlur = 0;
-  // Штит ефект
   if (player.shield) {
     ctx.strokeStyle = 'rgba(74,138,255,0.3)';
     ctx.lineWidth = 2;
@@ -726,14 +804,12 @@ function draw() {
     ctx.stroke();
   }
 
-  // ── Ниво инфо ──────────────────────────────────────────────────
   ctx.fillStyle = 'rgba(255,255,255,0.2)';
   ctx.font = '11px monospace';
   ctx.textAlign = 'left';
   ctx.fillText(`🏆 LVL ${currentLevel+1}/${LEVELS.length}`, 10, 20);
   ctx.fillText(`🎯 ${enemiesKilled}/${enemiesForLevel}`, 10, 34);
 
-  // ── Ниво завршено ────────────────────────────────────────────
   if (levelComplete && !gameOver) {
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(0, 280, W, 80);
@@ -746,11 +822,10 @@ function draw() {
     ctx.fillText('⭐ +' + Math.min(3, Math.floor(score / 100) + 1) + ' stars', W/2, 355);
   }
 
-  // ── Game Over ──────────────────────────────────────────────────
   if (gameOver) {
     ctx.fillStyle = 'rgba(0,0,0,0.7)';
     ctx.fillRect(0, 260, W, 140);
-    ctx.fillStyle = '#ff6b6b';
+    ctx.fillStyle = currentLevel >= LEVELS.length ? '#4aff4a' : '#ff6b6b';
     ctx.font = 'bold 34px Arial';
     ctx.textAlign = 'center';
     ctx.fillText(currentLevel >= LEVELS.length ? '🏆 YOU WIN!' : '💥 GAME OVER', W/2, 315);
@@ -763,7 +838,7 @@ function draw() {
   }
 }
 
-// ─── ГЛАВНА ЛУПА ──────────────────────────────────────────────
+// ─── ЛУПА ──────────────────────────────────────────────────────
 function gameLoop() {
   update();
   draw();
@@ -771,7 +846,10 @@ function gameLoop() {
 }
 
 // ─── РЕСТАРТ ──────────────────────────────────────────────────
-function restart() { initGame(); }
+function restart() { 
+  sound.stopMusic();
+  initGame(); 
+}
 
 // ─── КОНТРОЛИ ──────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
@@ -784,14 +862,15 @@ document.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowRight') { keys.right = false; e.preventDefault(); }
 });
 
-// ─── Допир / клик ──────────────────────────────────────────────
 canvas.addEventListener('click', (e) => {
+  sound.resume();
   if (gameOver) { restart(); return; }
 });
 
 let touchX = null;
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
+  sound.resume();
   if (gameOver) { restart(); return; }
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -819,12 +898,13 @@ canvas.addEventListener('touchcancel', (e) => {
   keys.left = false; keys.right = false;
 });
 
-// ─── Ресет копче ──────────────────────────────────────────────
 document.getElementById('resetBtn').addEventListener('click', restart);
 
 // ─── СТАРТ ─────────────────────────────────────────────────────
 initGame();
 gameLoop();
 </script>
+
+<!-- ПРВ КЛИК – ВКЛУЧИ ЗВУК (покрај event listeners) -->
 </body>
 </html>
